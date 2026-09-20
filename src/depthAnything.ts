@@ -1,3 +1,5 @@
+import { DEFAULT_GRID_SIZE } from './pipeline'
+
 const modelId = 'onnx-community/depth-anything-v2-small'
 
 type DepthImage = { data: ArrayLike<number>; width?: number; height?: number }
@@ -6,7 +8,7 @@ let estimator: DepthEstimator | null = null
 
 export const depthAnythingModel = modelId
 
-export const estimateRelativeDepth = async (file: Blob, width = 32, height = 32): Promise<number[]> => {
+export const estimateRelativeDepth = async (file: Blob, width = DEFAULT_GRID_SIZE, height = DEFAULT_GRID_SIZE): Promise<number[]> => {
   if (!estimator) {
     const { env, pipeline } = await import('@huggingface/transformers')
     env.allowLocalModels = false
