@@ -27,8 +27,13 @@ export const estimateRelativeDepth = async (file: Blob, width = DEFAULT_GRID_SIZ
   const source = Array.from(depthData, Number)
   const sourceWidth = result.depth?.width ?? Math.round(Math.sqrt(source.length))
   const sourceHeight = result.depth?.height ?? sourceWidth
-  const minimum = Math.min(...source)
-  const maximum = Math.max(...source)
+  let minimum = Infinity
+  let maximum = -Infinity
+  for (const value of source) {
+    if (!Number.isFinite(value)) continue
+    minimum = Math.min(minimum, value)
+    maximum = Math.max(maximum, value)
+  }
   const range = Math.max(1e-6, maximum - minimum)
   const normalized = source.map((value) => (value - minimum) / range)
   const resized = new Array<number>(width * height)

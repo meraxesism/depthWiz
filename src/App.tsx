@@ -24,6 +24,7 @@ function App() {
   const [textureUrl, setTextureUrl] = useState<string | null>(null)
   const [geoMetadata, setGeoMetadata] = useState<GeoMetadata | null>(null)
   const [relativeDepth, setRelativeDepth] = useState<DepthProduct | null>(null)
+  const [depthInput, setDepthInput] = useState<Blob | null>(null)
   const [calibration, setCalibration] = useState<CalibrationProduct | null>(null)
   const [rasterHeights, setRasterHeights] = useState<number[] | null>(null)
   const [rasterStats, setRasterStats] = useState<RasterStats | null>(null)
@@ -207,7 +208,7 @@ function App() {
     const nextFile = event.target.files?.[0]
     if (!nextFile) return
     const isGeo = /\.(tif|tiff)$/i.test(nextFile.name)
-    setFile(nextFile); setInputType(isGeo ? 'GeoTIFF' : 'RGB image'); setGeoMetadata(null); setRelativeDepth(null); setCalibration(null); setRasterHeights(null); setRasterStats(null); setReferenceName(null); setTerrainClass(null); setFitMetrics(null); setGeoTiffKind('auto'); setAutoDetectedKind(null!); setSrtmStatus('SRTM ready'); setStatus('Reading imagery')
+    setFile(nextFile); setInputType(isGeo ? 'GeoTIFF' : 'RGB image'); setGeoMetadata(null); setRelativeDepth(null); setDepthInput(null); setCalibration(null); setRasterHeights(null); setRasterStats(null); setReferenceName(null); setTerrainClass(null); setFitMetrics(null); setGeoTiffKind('auto'); setAutoDetectedKind(null!); setSrtmStatus('SRTM ready'); setStatus('Reading imagery')
     const uploadData = new FormData()
     uploadData.append('imagery', nextFile)
     fetch('/api/upload', { method: 'POST', body: uploadData }).catch(() => setApiStatus('API upload unavailable'))
@@ -243,13 +244,17 @@ function App() {
         const effectiveKind: GeoTiffKind = geoTiffKind === 'auto' ? detected : geoTiffKind
         if (textureUrl) URL.revokeObjectURL(textureUrl)
         if (effectiveKind === 'as-imagery') {
+          let rasterImage: Blob | null = null
           try {
             const tex = await buildRasterTexture(nextFile, 512, 512)
+            rasterImage = tex.blob
             setTextureUrl(URL.createObjectURL(tex.blob))
           } catch {
             setTextureUrl(null)
           }
-          const depth = await buildRelativeDepthFromImage(nextFile, DEFAULT_GRID_SIZE, DEFAULT_GRID_SIZE)
+          if (!rasterImage) throw new Error('GeoTIFF imagery could not be decoded')
+          setDepthInput(rasterImage)
+          const depth = await buildRelativeDepthFromImage(rasterImage, DEFAULT_GRID_SIZE, DEFAULT_GRID_SIZE)
           const product = calibrateRelativeDepth(depth, null)
           const heights = product.values.map((value) => 8 + value * 180)
           setRelativeDepth(depth); setCalibration(product); setRasterHeights(heights)
@@ -257,6 +262,7 @@ function App() {
           setRasterStats({ minimum: product.minimum, maximum: product.maximum, mean: product.mean, slope })
           setStatus(geo?.geographic ? 'GeoTIFF imagery loaded · run DA V2, then calibrate with SRTM' : 'GeoTIFF imagery loaded · no geographic bounds (use DA V2)')
         } else {
+          setDepthInput(null)
           try {
             const tex = await buildRasterTexture(nextFile, 512, 512)
             setTextureUrl(URL.createObjectURL(tex.blob))
@@ -273,6 +279,7 @@ function App() {
           setStatus(geo?.geographic ? 'GeoTIFF DEM ready · georeferenced' : 'GeoTIFF DEM loaded · bounds are not geographic (local extent used)')
         }
       } else {
+        setDepthInput(nextFile)
         if (textureUrl) URL.revokeObjectURL(textureUrl)
         setTextureUrl(URL.createObjectURL(nextFile))
         const depth = await buildRelativeDepthFromImage(nextFile, DEFAULT_GRID_SIZE, DEFAULT_GRID_SIZE)
@@ -295,7 +302,7 @@ function App() {
     }
     setProcessing(true); setStatus(`Loading ${depthAnythingModel}`)
     try {
-      const values = await estimateRelativeDepth(file, DEFAULT_GRID_SIZE, DEFAULT_GRID_SIZE)
+      const values = await estimateRelativeDepth(depthInput ?? file, DEFAULT_GRID_SIZE, DEFAULT_GRID_SIZE)
       const min = Math.min(...values)
       const max = Math.max(...values)
       const mean = values.reduce((sum, value) => sum + value, 0) / values.length
@@ -359,11 +366,15 @@ function App() {
       const effectiveKind: GeoTiffKind = geoTiffKind === 'auto' ? detected : geoTiffKind
       if (textureUrl) URL.revokeObjectURL(textureUrl)
       if (effectiveKind === 'as-imagery') {
+        let rasterImage: Blob | null = null
         try {
           const tex = await buildRasterTexture(file, 512, 512)
+          rasterImage = tex.blob
           setTextureUrl(URL.createObjectURL(tex.blob))
         } catch { setTextureUrl(null) }
-        const depth = await buildRelativeDepthFromImage(file, DEFAULT_GRID_SIZE, DEFAULT_GRID_SIZE)
+        if (!rasterImage) throw new Error('GeoTIFF imagery could not be decoded')
+        setDepthInput(rasterImage)
+        const depth = await buildRelativeDepthFromImage(rasterImage, DEFAULT_GRID_SIZE, DEFAULT_GRID_SIZE)
         const product = calibrateRelativeDepth(depth, null)
         const heights = product.values.map((value) => 8 + value * 180)
         setRelativeDepth(depth); setCalibration(product); setRasterHeights(heights)
@@ -372,6 +383,7 @@ function App() {
         setFitMetrics(null); setTerrainClass(null)
         setStatus(geoMetadata?.geographic ? 'Treating GeoTIFF as imagery · DA V2 + SRTM next' : 'Treating GeoTIFF as imagery · run DA V2')
       } else {
+        setDepthInput(null)
         try {
           const tex = await buildRasterTexture(file, 512, 512)
           setTextureUrl(URL.createObjectURL(tex.blob))
