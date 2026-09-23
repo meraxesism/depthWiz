@@ -1,0 +1,9 @@
+fastapi
+rasterio
+numpy
+scipy
+elevation
+uvicorn
+python-multipart
+onnxruntime
+Pillow

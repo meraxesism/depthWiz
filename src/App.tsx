@@ -73,6 +73,9 @@ function App() {
     if (viewer.scene.skyAtmosphere) viewer.scene.skyAtmosphere.show = true
     viewer.scene.fog.enabled = true
     viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#c5d5d0')
+    viewer.scene.renderError.addEventListener((error) => {
+      setStatus(`Cesium render error: ${error instanceof Error ? error.message : String(error)}`)
+    })
     viewer.camera.percentageChanged = 0.01
     const ssc = viewer.scene.screenSpaceCameraController
     ssc.enableCollisionDetection = false
@@ -145,13 +148,44 @@ function App() {
       const position = Cesium.Cartesian3.fromDegrees(lon, lat, h)
       const offset = (row * size + column) * 3
       positions[offset] = position.x; positions[offset + 1] = position.y; positions[offset + 2] = position.z
-      const normal = Cesium.Ellipsoid.WGS84.geodeticSurfaceNormal(position, new Cesium.Cartesian3())
-      normals[offset] = normal.x; normals[offset + 1] = normal.y; normals[offset + 2] = normal.z
+      normals[offset] = 0; normals[offset + 1] = 0; normals[offset + 2] = 0
       const uvOffset = (row * size + column) * 2
       uv[uvOffset] = nX; uv[uvOffset + 1] = nY
     }
     let index = 0
     for (let row = 0; row < size - 1; row += 1) for (let column = 0; column < size - 1; column += 1) { const topLeft = row * size + column, topRight = topLeft + 1, bottomLeft = topLeft + size, bottomRight = bottomLeft + 1; indices[index++] = topLeft; indices[index++] = bottomLeft; indices[index++] = topRight; indices[index++] = topRight; indices[index++] = bottomLeft; indices[index++] = bottomRight }
+    const accumulateNormal = (first: number, second: number, third: number) => {
+      const a = new Cesium.Cartesian3(positions[first * 3], positions[first * 3 + 1], positions[first * 3 + 2])
+      const b = new Cesium.Cartesian3(positions[second * 3], positions[second * 3 + 1], positions[second * 3 + 2])
+      const c = new Cesium.Cartesian3(positions[third * 3], positions[third * 3 + 1], positions[third * 3 + 2])
+      const edgeA = Cesium.Cartesian3.subtract(b, a, new Cesium.Cartesian3())
+      const edgeB = Cesium.Cartesian3.subtract(c, a, new Cesium.Cartesian3())
+      const faceNormal = Cesium.Cartesian3.cross(edgeA, edgeB, new Cesium.Cartesian3())
+      for (const vertex of [first, second, third]) {
+        const normalOffset = vertex * 3
+        normals[normalOffset] += faceNormal.x
+        normals[normalOffset + 1] += faceNormal.y
+        normals[normalOffset + 2] += faceNormal.z
+      }
+    }
+    for (let row = 0; row < size - 1; row += 1) for (let column = 0; column < size - 1; column += 1) {
+      const topLeft = row * size + column
+      const topRight = topLeft + 1
+      const bottomLeft = topLeft + size
+      const bottomRight = bottomLeft + 1
+      accumulateNormal(topLeft, bottomLeft, topRight)
+      accumulateNormal(topRight, bottomLeft, bottomRight)
+    }
+    for (let vertex = 0; vertex < size * size; vertex += 1) {
+      const normalOffset = vertex * 3
+      const normal = Cesium.Cartesian3.normalize(
+        new Cesium.Cartesian3(normals[normalOffset], normals[normalOffset + 1], normals[normalOffset + 2]),
+        new Cesium.Cartesian3(),
+      )
+      normals[normalOffset] = normal.x
+      normals[normalOffset + 1] = normal.y
+      normals[normalOffset + 2] = normal.z
+    }
     const boundingSphere = Cesium.BoundingSphere.fromVertices(positions)
     const geometry = new Cesium.Geometry({
       attributes: {
